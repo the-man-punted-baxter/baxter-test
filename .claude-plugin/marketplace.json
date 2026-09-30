@@ -1,0 +1,14 @@
+{
+  "name": "baxter-test",
+  "description": "Test marketplace",
+  "owner": {
+    "name": "Kurt McKain"
+  },
+  "plugins": [
+    {
+      "name": "test",
+      "source": "./plugins/test",
+      "description": "Simple test plugin that fetches the current weather and forecast for a location."
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "test",
+  "version": "0.1.0",
+  "description": "Simple test plugin that fetches the current weather and forecast for a location.",
+  "author": {
+    "name": "Kurt McKain"
+  },
+  "keywords": ["test", "weather"]
+}
