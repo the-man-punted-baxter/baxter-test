@@ -1,0 +1,82 @@
+# PUBLIC repo: .github/workflows/release.yml
+#
+# Runs when a reviewed PR merges to main. Builds the zip, publishes a SHA-256
+# check code, and attaches a signed build provenance attestation.
+#
+# Public repo settings to apply (all free on public repos):
+#   - Ruleset on main: require PR, 1+ approval, require review from code owners,
+#     block force pushes and deletion, restrict direct pushes.
+#   - .github/CODEOWNERS: owners on /plugins/ and /.claude-plugin/ (and stricter
+#     owners on any certification plugin directory).
+#   - Tag ruleset: restrict creating v* tags to the Actions bot so nobody
+#     hand-tags a release.
+#   - Org: require 2FA, enable secret scanning + push protection.
+#
+# Note: users with "Sync automatically" on receive whatever is on main, so the
+# PR review IS the release gate. Always bump plugin.json "version" in the PR.
+ 
+name: release
+ 
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/**'
+      - '.claude-plugin/**'
+ 
+permissions:
+  contents: write        # create tag and release
+  id-token: write        # attestation signing
+  attestations: write
+ 
+env:
+  PLUGIN_DIR: plugins/test      # change to plugins/company-side for the real plugin
+  PLUGIN_NAME: test
+ 
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4   # pin to a full commit SHA in production
+ 
+      - name: Read version and skip if already released
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(jq -r .version "$PLUGIN_DIR/.claude-plugin/plugin.json")"
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "::warning::v$VERSION already released. Content changed without a version bump?"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+ 
+      - name: Build zip and check code
+        if: steps.v.outputs.skip == 'false'
+        run: |
+          mkdir dist
+          (cd "$PLUGIN_DIR" && zip -r -X "$GITHUB_WORKSPACE/dist/${PLUGIN_NAME}-${{ steps.v.outputs.version }}.zip" .)
+          (cd dist && sha256sum *.zip > SHA256SUMS)
+          cat dist/SHA256SUMS
+ 
+      - name: Attest build provenance
+        if: steps.v.outputs.skip == 'false'
+        uses: actions/attest-build-provenance@v2   # pin to a full commit SHA
+        with:
+          subject-path: dist/*.zip
+ 
+      - name: Create tag and release
+        if: steps.v.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.v.outputs.version }}" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "v${{ steps.v.outputs.version }}" \
+            --notes "Check code (SHA-256):
+          $(cat dist/SHA256SUMS)
+ 
+          Verify provenance: gh attestation verify dist/*.zip --repo $GITHUB_REPOSITORY"
+ 
